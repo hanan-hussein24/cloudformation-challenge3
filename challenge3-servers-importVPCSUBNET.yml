@@ -1,0 +1,86 @@
+Description: >
+   Use the infrastructure we created earlier to build and deploy
+   EC2 Instance & IAM Role and InstanceProfile: 
+   The IAM Role to allow EC2 Session Manager to access our server.
+   An InstanceProfile will allow passing the IAM role to our server.
+   
+   Export VPCID & Private Subnet from challenge2-stack FILES AND 
+   Import VPCID & PRIVATE-SUBNET HERE.
+Parameters:
+
+   EnvironmentName:
+      Description: An environment name that will be prefixed to resource names
+      Type: String
+
+   AMItoUse:
+      Description: AMI to use for our base image
+      Type: AWS::EC2::Image::Id
+
+   NetworkStackName:
+      Description: Name of the base stack with all infra resources
+      Type: String
+      #here give name of stack we export values from it.
+      Default: challenge2-stack
+
+Resources:
+
+   RoleForSSMAccess: 
+      Type: "AWS::IAM::Role"
+      Properties: 
+         AssumeRolePolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+               - Effect: "Allow"
+                 Principal: 
+                   Service: 
+                      - "ec2.amazonaws.com"
+                 Action: 
+                   - "sts:AssumeRole"
+         ManagedPolicyArns:
+            - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+   
+   ServerInstanceProfile: 
+       Type: "AWS::IAM::InstanceProfile"
+       Properties: 
+         Roles: 
+            - !Ref RoleForSSMAccess
+
+   WebAccessSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+         GroupDescription: Allow http to our hosts
+         VpcId:
+            Fn::ImportValue:
+                  Fn::Sub: '${NetworkStackName}-VPC'
+         SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 80
+              ToPort: 80
+              CidrIp: 0.0.0.0/0
+         SecurityGroupEgress:
+            - IpProtocol: -1
+              FromPort: -1
+              ToPort: -1
+              CidrIp: 0.0.0.0/0
+
+   ServerInstance:
+       Type: AWS::EC2::Instance
+       Properties:
+         ImageId: !Ref AMItoUse
+         AvailabilityZone: us-east-1a
+         InstanceType: t2.micro
+         NetworkInterfaces: 
+            - AssociatePublicIpAddress: "true"
+              DeviceIndex: "0"
+              SubnetId: 
+               Fn::ImportValue:
+                     Fn::Sub: '${NetworkStackName}-PrivateSubnet'
+              GroupSet: 
+                  - Ref: 'WebAccessSecurityGroup'
+         UserData:
+            Fn::Base64: !Sub |
+               #!/bin/bash
+               sudo yum update -y
+               sudo yum install -y httpd
+               sudo systemctl start httpd
+               sudo systemctl enable httpd           

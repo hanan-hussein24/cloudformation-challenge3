@@ -1,0 +1,151 @@
+Description: >
+   Use the infrastructure we created earlier to build and deploy
+   EC2 Instance, SecurityGroup & IAM Role and InstanceProfile: 
+   The IAM Role to allow EC2 Session Manager to access our server.
+   An InstanceProfile will allow passing the IAM role to our server.
+
+Parameters:
+
+   EnvironmentName:
+      Description: An environment name that will be prefixed to resource names
+      Type: String
+
+   VpcCIDR:
+      Description: Please enter the IP range (CIDR notation) for this VPC
+      Type: String
+      Default: 10.0.0.0/16
+
+   PrivateSubnetCIDR:
+      Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+      Type: String
+      Default: 10.0.2.0/24
+   
+   AMItoUse:
+      Description: AMI to use for our base image
+      Type: AWS::EC2::Image::Id
+
+
+Resources:
+
+   MainVPC:
+      Type: AWS::EC2::VPC
+      Properties:
+         CidrBlock: !Ref VpcCIDR
+         EnableDnsHostnames: "true"
+         Tags:
+            - Key: Name
+              Value: !Ref EnvironmentName
+
+   InternetGW:
+      Type: AWS::EC2::InternetGateway
+      Properties:
+         Tags:
+            - Key: Name
+              Value: !Ref EnvironmentName
+
+   AttachInternetGateway:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+         InternetGatewayId: !Ref InternetGW
+         VpcId: !Ref MainVPC
+
+   PrivateSubnet:
+      Type: AWS::EC2::Subnet
+      Properties:
+         VpcId: !Ref MainVPC
+         AvailabilityZone: !Select [ 0, !GetAZs '' ]
+         CidrBlock: !Ref PrivateSubnetCIDR
+         MapPublicIpOnLaunch: false
+         Tags:
+            - Key: Name
+              Value: !Sub ${EnvironmentName} Private Subnet (AZ)
+
+   EIP:
+      Type: AWS::EC2::EIP
+      DependsOn: AttachInternetGateway
+      Properties:
+         Domain: vpc
+
+   NAT:
+      Type: AWS::EC2::NatGateway
+      Properties:
+         AllocationId: !GetAtt EIP.AllocationId
+         SubnetId: !Ref PrivateSubnet
+
+   PrivateRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+         VpcId: !Ref MainVPC
+         Tags:
+            - Key: Name
+              Value: !Sub ${EnvironmentName} Private Routes (AZ)
+
+   PrivateInternetOutboundRoute:
+      Type: AWS::EC2::Route
+      Properties:
+         RouteTableId: !Ref PrivateRouteTable
+         DestinationCidrBlock: 0.0.0.0/0
+         NatGatewayId: !Ref NAT
+
+   AssociatePRIVRT:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+         RouteTableId: !Ref PrivateRouteTable
+         SubnetId: !Ref PrivateSubnet
+
+   RoleForSSMAccess: 
+      Type: "AWS::IAM::Role"
+      Properties: 
+         AssumeRolePolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+               - Effect: "Allow"
+                 Principal: 
+                   Service: 
+                      - "ec2.amazonaws.com"
+                 Action: 
+                   - "sts:AssumeRole"
+         ManagedPolicyArns:
+            - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+   ServerInstanceProfile: 
+       Type: "AWS::IAM::InstanceProfile"
+       Properties: 
+         Roles: 
+            - !Ref RoleForSSMAccess
+
+   WebAccessSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+         GroupDescription: Allow http to our hosts
+         VpcId: !Ref MainVPC
+         SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 80
+              ToPort: 80
+              CidrIp: 0.0.0.0/0
+         SecurityGroupEgress:
+            - IpProtocol: -1
+              FromPort: -1
+              ToPort: -1
+              CidrIp: 0.0.0.0/0
+
+   ServerInstance:
+       Type: AWS::EC2::Instance
+       Properties:
+         ImageId: !Ref AMItoUse
+         AvailabilityZone: us-east-1a
+         InstanceType: t2.micro
+         NetworkInterfaces: 
+            - AssociatePublicIpAddress: "true"
+              DeviceIndex: "0"
+              SubnetId: !Ref PrivateSubnet
+              GroupSet: 
+                  - Ref: 'WebAccessSecurityGroup'
+         UserData:
+            Fn::Base64: !Sub |
+               #!/bin/bash
+               sudo yum update -y
+               sudo yum install -y httpd
+               sudo systemctl start httpd
+               sudo systemctl enable httpd           

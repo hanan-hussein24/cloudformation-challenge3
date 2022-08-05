@@ -1,0 +1,44 @@
+   PublicSubnet:
+      Type: AWS::EC2::Subnet
+      Properties:
+         VpcId: !Ref MainVPC
+         AvailabilityZone: !Select [ 0, !GetAZs '' ]
+         CidrBlock: !Ref PublicSubnetCIDR
+         MapPublicIpOnLaunch: true
+         Tags:
+            - Key: Name
+              Value: !Sub ${EnvironmentName} Public Subnet (AZ)
+
+
+
+
+
+
+
+PublicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+         VpcId: !Ref MainVPC
+         Tags:
+            - Key: Name
+              Value: !Sub ${EnvironmentName} Public Routes
+
+   PublicInternetRoute:
+      Type: AWS::EC2::Route
+      DependsOn: AttachInternetGateway
+      Properties:
+         RouteTableId: !Ref PublicRouteTable
+         DestinationCidrBlock: 0.0.0.0/0
+         GatewayId: !Ref InternetGW
+
+   AssociatePUBRT:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+         RouteTableId: !Ref PublicRouteTable
+         SubnetId: !Ref PublicSubnetPublicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+         VpcId: !Ref MainVPC
+         Tags:
+            - Key: Name
+              Value: !Sub ${EnvironmentName} Public Routes

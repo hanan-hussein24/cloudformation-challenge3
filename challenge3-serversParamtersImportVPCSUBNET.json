@@ -1,0 +1,10 @@
+[
+    {
+        "ParameterKey": "EnvironmentName",
+		"ParameterValue": "Challenge3Project"
+    },
+    {
+        "ParameterKey": "AMItoUse",
+        "ParameterValue": "ami-0cff7528ff583bf9a"
+    }
+]
